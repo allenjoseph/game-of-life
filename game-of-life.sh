@@ -18,6 +18,7 @@ declare -i GRID_WIDTH=100
 
 declare -a CELLS
 declare -i CELL_INDEX=0
+declare -A CELLS_VERSION_2
 
 declare -a TRASH
 declare -i TRASH_INDEX=0
@@ -26,6 +27,7 @@ declare -a NEWS
 declare -i NEWS_INDEX=0
 
 declare -a NEIGHBUORS
+declare -A NEIGHBUORS_VERSION_2
 declare -i NEIGHBUORS_INDEX=0
 
 printLine() {
@@ -38,8 +40,10 @@ addCell() {
     x=$1
     y=$2
 
-    CELLS[$CELL_INDEX]="$x|$y|$CELL_INDEX"
-    let CELL_INDEX++
+    # CELLS[$CELL_INDEX]="$x|$y|$CELL_INDEX"
+    # let CELL_INDEX++
+
+    CELLS_VERSION_2["$x|$y"]="X"
 }
 
 addCellsSeed() {
@@ -126,8 +130,8 @@ findNeighbuor() {
 evaluateNeighbuors() {
     # Parameters:
     # each cell contains "x|y" positions
-    x=$1
-    y=$2
+    declare -i x=$1
+    declare -i y=$2
 
     # u: up
     # d: down
@@ -149,28 +153,42 @@ evaluateNeighbuors() {
     rd="$((x+1))|$((y+1))"
 
     # index of cell
-    index=$3
+    declare -i index=$3
 
     count=0
     for neighbuor in $u $ru $r $rd $d $ld $l $lu; do
-        findCell $neighbuor
-        if [ $? == 1 ]; then
-            let count++
-        elif [ $index -ge 0 ]; then
-            findNeighbuor $neighbuor
-            if [ $? != 1 ]; then
-                NEIGHBUORS[$NEIGHBUORS_INDEX]="$neighbuor"
-                let NEIGHBUORS_INDEX++
+
+        if [[ ${CELLS_VERSION_2["$neighbuor"]} ]]; then
+
+            if [[ $index -eq 1 ]]; then
+                NEIGHBUORS[$count]="$neighbuor"
             fi
+
+            let count++
         fi
     done
+
+    # for neighbuor in $u $ru $r $rd $d $ld $l $lu; do
+    #     findCell $neighbuor
+    #     if [ $? == 1 ]; then
+    #         let count++
+    #     elif [ $index -ge 0 ]; then
+    #         findNeighbuor $neighbuor
+    #         if [ $? != 1 ]; then
+    #             NEIGHBUORS[$NEIGHBUORS_INDEX]="$neighbuor"
+    #             let NEIGHBUORS_INDEX++
+    #         fi
+    #     fi
+    # done
 
     # Rules:
     # cell with two or three live neighbours lives
     # cell with fewer than two live neighbours dies
     # cell with more than three live neighbours dies
     # cell with exactly three live neighbours becomes a live
-    if [ $index != -1 ]; then
+
+    # TODO: continuos here!!!
+    if [[ $index == -1 ]]; then
         if [ $count -lt 2 ] || [ $count -gt 3 ]; then
             TRASH[$TRASH_INDEX]=${CELLS[$index]}
             let TRASH_INDEX++
