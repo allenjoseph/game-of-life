@@ -8,7 +8,6 @@
 # unset: Remove variable or function names
 
 declare -i GENERATION=-1
-declare -i CROWDING=0
 
 declare -i GRID_START_ROW=2
 declare -i GRID_START_COL=0
@@ -16,19 +15,14 @@ declare -i GRID_START_COL=0
 declare -i GRID_HEIGHT=25
 declare -i GRID_WIDTH=100
 
-declare -a CELLS
-declare -i CELL_INDEX=0
-declare -A CELLS_VERSION_2
+declare -A CELLS
+declare -A NEIGHBORS
 
 declare -a TRASH
 declare -i TRASH_INDEX=0
 
 declare -a NEWS
 declare -i NEWS_INDEX=0
-
-declare -a NEIGHBUORS
-declare -A NEIGHBUORS_VERSION_2
-declare -i NEIGHBUORS_INDEX=0
 
 printLine() {
     printf "%*s\n" $(tput cols) | tr ' ' -
@@ -37,13 +31,10 @@ printLine() {
 addCell() {
     # Parameters:
     # each cell contains "x|y|index" positions
-    x=$1
-    y=$2
+    local x=$1
+    local y=$2
 
-    # CELLS[$CELL_INDEX]="$x|$y|$CELL_INDEX"
-    # let CELL_INDEX++
-
-    CELLS_VERSION_2["$x|$y"]="X"
+    CELLS["$x|$y"]="$x|$y"
 }
 
 addCellsSeed() {
@@ -74,60 +65,51 @@ addCellsSeed() {
 printGrid() {
 
     # add new cells
-    for cell in ${NEWS[*]}; do
-        IFS='|' read -ra positions <<< "$cell"
-        x=${positions[0]}
-        y=${positions[1]}
+    for new in ${NEWS[*]}; do
+        IFS='|' read -ra positionsNew <<< "$new"
+        newX=${positionsNew[0]}
+        newY=${positionsNew[1]}
 
-        findCell "$x|$y"
-        if [ $? != 1 ]; then
-            addCell $x $y
-        fi
+        addCell $newX $newY
     done
-    NEWS=
-    let NEWS_INDEX=0
 
     # each cell contains "x|y" positions
     for cell in ${CELLS[*]}; do
 
-        if [ ${#cell} -gt 0 ]; then
+        if [[ $cell ]]; then
 
-            IFS='|' read -ra positions <<< "$cell"
-            x=${positions[0]}
-            y=${positions[1]}
+            IFS='|' read -ra positionsCell <<< "$cell"
+            cellX=${positionsCell[0]}
+            cellY=${positionsCell[1]}
 
-            tput cup $y $x
-            printf "X"
+            # print cell
+            tput cup $cellY $cellX; printf "X"
         fi
     done
 
     # delete cells in trash
-    for cell in ${TRASH[*]}; do
+    for junk in ${TRASH[*]}; do
 
-        IFS='|' read -ra positions <<< "$cell"
-        x=${positions[0]}
-        y=${positions[1]}
-        index=${positions[2]}
+        IFS='|' read -ra positionsJunk <<< "$junk"
+        junkX=${positionsJunk[0]}
+        junkY=${positionsJunk[1]}
 
-        unset CELLS[$index]
-        tput cup $y $x
-        printf " "
+        # print empty space
+        tput cup $junkY $junkX; printf " "
+
+        # remove cell
+        unset CELLS["$junk"]
     done
-    TRASH=
+
+    # clean trash array
+    unset TRASH
     let TRASH_INDEX=0
 
+    # increase generation
     let GENERATION++
 }
 
-findCell() {
-    case "${CELLS[*]}" in  *"$1"*) return 1 ;; esac
-}
-
-findNeighbuor() {
-    case "${NEIGHBUORS[*]}" in  *"$1"*) return 1 ;; esac
-}
-
-evaluateNeighbuors() {
+evaluateNeighbors() {
     # Parameters:
     # each cell contains "x|y" positions
     declare -i x=$1
@@ -135,99 +117,83 @@ evaluateNeighbuors() {
 
     # u: up
     # d: down
-    u="$x|$((y-1))"
-    d="$x|$((y+1))"
+    local u="$x|$((y-1))"
+    local d="$x|$((y+1))"
 
     # l: left
     # lu: left up
     # ld: left down
-    l="$((x-1))|$y"
-    lu="$((x-1))|$((y-1))"
-    ld="$((x-1))|$((y+1))"
+    local l="$((x-1))|$y"
+    local lu="$((x-1))|$((y-1))"
+    local ld="$((x-1))|$((y+1))"
 
     # r: right
     # ru: right up
     # rd: right down
-    r="$((x+1))|$y"
-    ru="$((x+1))|$((y-1))"
-    rd="$((x+1))|$((y+1))"
+    local r="$((x+1))|$y"
+    local ru="$((x+1))|$((y-1))"
+    local rd="$((x+1))|$((y+1))"
 
-    # index of cell
-    declare -i index=$3
+    # Value to know if it is evaluating a neighbor
+    local comesFromNeighbor=$3
 
-    count=0
-    for neighbuor in $u $ru $r $rd $d $ld $l $lu; do
+    local count=0
+    for neighbor in $u $ru $r $rd $d $ld $l $lu; do
 
-        if [[ ${CELLS_VERSION_2["$neighbuor"]} ]]; then
-
-            if [[ $index -eq 1 ]]; then
-                NEIGHBUORS[$count]="$neighbuor"
-            fi
-
+        # if cell exists increse counter
+        if [[ ${CELLS["$neighbor"]} ]]; then
             let count++
+
+        # else evaluate neighbor to create a new life
+        elif [[ ! $comesFromNeighbor ]]; then
+            if [[ ! ${NEIGHBORS["$neighbor"]} ]]; then
+                NEIGHBORS["$neighbor"]="$neighbor"
+            fi
         fi
     done
 
-    # for neighbuor in $u $ru $r $rd $d $ld $l $lu; do
-    #     findCell $neighbuor
-    #     if [ $? == 1 ]; then
-    #         let count++
-    #     elif [ $index -ge 0 ]; then
-    #         findNeighbuor $neighbuor
-    #         if [ $? != 1 ]; then
-    #             NEIGHBUORS[$NEIGHBUORS_INDEX]="$neighbuor"
-    #             let NEIGHBUORS_INDEX++
-    #         fi
-    #     fi
-    # done
-
     # Rules:
-    # cell with two or three live neighbours lives
-    # cell with fewer than two live neighbours dies
-    # cell with more than three live neighbours dies
-    # cell with exactly three live neighbours becomes a live
-
-    # TODO: continuos here!!!
-    if [[ $index == -1 ]]; then
-        if [ $count -lt 2 ] || [ $count -gt 3 ]; then
-            TRASH[$TRASH_INDEX]=${CELLS[$index]}
-            let TRASH_INDEX++
-        fi
+    # cell with fewer than two live neighbors dies
+    # cell with more than three live neighbors dies
+    if [[ "$comesFromNeighbor" == "" && ($count -lt 2 ||  $count -gt 3) ]]; then
+        TRASH[$TRASH_INDEX]="$x|$y"
+        let TRASH_INDEX++
     fi
 
-    if [ $index == -1 ] && [ $count == 3 ]; then
+    # cell with exactly three live neighbors becomes a live
+    if [[ "$comesFromNeighbor" == "comesFromNeighbor" && $count -eq 3 ]]; then
         NEWS[$NEWS_INDEX]="$x|$y"
         let NEWS_INDEX++
     fi
+
+    # cell with two or three live neighbors lives
+    # TO NOTHING
 }
 
 evaluateLife() {
-
-    NEIGHBUORS=
-    let NEIGHBUORS_INDEX=0
-
     for cell in ${CELLS[*]}; do
 
-        IFS='|' read -ra positions <<< "$cell"
-        x=${positions[0]}
-        y=${positions[1]}
-        index=${positions[2]}
+        if [[ $cell ]]; then
 
-        evaluateNeighbuors $x $y $index
+            IFS='|' read -ra positionsCell <<< "$cell"
+            local -i x=${positionsCell[0]}
+            local -i y=${positionsCell[1]}
+
+            evaluateNeighbors $x $y ""
+        fi
     done
 
-    temp_neighbuors=(${NEIGHBUORS[*]})
-    NEIGHBUORS=
-    let NEIGHBUORS_INDEX=0
+    NEIGHBORS=
+    for neighbor in ${NEIGHBORS[*]}; do
 
-    for neighbuor in ${temp_neighbuors[*]}; do
+        if [[ $neighbor ]]; then
 
-        IFS='|' read -ra positions <<< "$neighbuor"
-        x=${positions[0]}
-        y=${positions[1]}
-        index=-1
+            IFS='|' read -ra positionsNeighbor <<< "$neighbor"
+            local -i x=${positionsNeighbor[0]}
+            local -i y=${positionsNeighbor[1]}
 
-        evaluateNeighbuors $x $y $index
+            evaluateNeighbors $x $y "comesFromNeighbor"
+        fi
     done
 
     printGrid
