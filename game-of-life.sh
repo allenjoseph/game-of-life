@@ -1,11 +1,17 @@
 #!/bin/bash
 # Author: Allen Joseph
-
+#
+# Bash version 4 is required
+#
 # Documentation Commands: https://ss64.com/bash/
+#
 # Commands used:
 # tput: Set terminal-dependent capabilities, color, position
 # declare: Declare variables and give them attributes
 # unset: Remove variable or function names
+# printf: Format and print data
+# awk: Find and Replace text
+# IFS: internal field separator, It is used by the shell to determine how to do word splitting
 
 declare -i GENERATION=-1
 
@@ -24,22 +30,19 @@ declare -i TRASH_INDEX=0
 declare -a NEWS
 declare -i NEWS_INDEX=0
 
-printLine() {
-    printf "\n%*s\n" $(tput cols) | tr ' ' - >> ${buffer}
-}
+SEED_SELECTED="oscillator"
+declare -a SEEDS
 
-printHeader() {
-    printf "El Juego de la Vida" >> ${buffer}
-    printLine
-}
+# Methods for the game processing
+resetHelperArrays() {
+    # clean trash array
+    unset TRASH
+    let TRASH_INDEX=0
 
-printFooter() {
-    tput cup $((GRID_START_ROW + GRID_HEIGHT)) 0 >> ${buffer}
-    printLine
-    printf "Generación: $GENERATION Población: ${#CELLS[*]}" >> ${buffer}
-    printf "\nPress 'n' to next generation\n" >> ${buffer}
+    # clean news array
+    unset NEWS
+    let NEWS_INDEX=0
 }
-
 addCell() {
     # Parameters:
     # each cell contains "x|y|index" positions
@@ -48,22 +51,23 @@ addCell() {
 
     CELLS["$x|$y"]="$x|$y"
 }
+addSeed() {
 
-addCellsSeed() {
-    # Num of lines, cols of seed
-    declare -i lines=$(awk 'END { print NR }' seed.txt)
-    declare -i cols=$(awk '{ if (length > L) {L=length} } END { print L }' seed.txt)
-
-    # center seed
-    declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
-    declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
-
-    file="seed.txt"
+    file="seeds/$SEED_SELECTED.txt"
     if [[ "$1" ]]; then
         file="$1"
     fi
 
-    # initials cells is in seed.txt
+    # Num of lines, cols in $file
+    declare -i lines=$(awk 'END { print NR }' $file)
+    declare -i cols=$(awk '{ if (length > L) {L=length} } END { print L }' $file)
+
+    # center cells
+    declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
+    declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
+
+
+    # initials cells
     # IFS: Internal Field Separator
     # read -r: do not allow backslashes to escape any characters
     while IFS= read -r line; do
@@ -72,58 +76,12 @@ addCellsSeed() {
 
         for(( i=0; i<=${#line}; i++ )); do
 
-            if [[ "${line:$i:1}" == "X" ]]; then
+            if [[ "${line:$i:1}" == "x" ]]; then
                 addCell $(( CENTERED_LEFT+i )) $CENTERED_TOP
             fi
         done
     done < "$file"
 }
-
-printGrid() {
-
-    # add new cells
-    for new in ${NEWS[*]}; do
-        IFS='|' read -ra positionsNew <<< "$new"
-        newX=${positionsNew[0]}
-        newY=${positionsNew[1]}
-
-        addCell $newX $newY
-    done
-
-    # each cell contains "x|y" positions
-    for cell in ${CELLS[*]}; do
-
-        if [[ $cell ]]; then
-
-            IFS='|' read -ra positionsCell <<< "$cell"
-            cellX=${positionsCell[0]}
-            cellY=${positionsCell[1]}
-
-            # print cell
-            tput cup $cellY $cellX >> ${buffer}
-            printf "X" >> ${buffer}
-        fi
-    done
-
-    # delete cells in trash
-    for junk in ${TRASH[*]}; do
-
-        IFS='|' read -ra positionsJunk <<< "$junk"
-        junkX=${positionsJunk[0]}
-        junkY=${positionsJunk[1]}
-
-        # print empty space
-        tput cup $junkY $junkX >> ${buffer}
-        printf " " >> ${buffer}
-
-        # remove cell
-        unset CELLS["$junk"]
-    done
-
-    # increase generation
-    let GENERATION++
-}
-
 evaluateNeighbors() {
     # Parameters:
     # each cell contains "x|y" positions
@@ -184,17 +142,6 @@ evaluateNeighbors() {
     # cell with two or three live neighbors lives
     # TO NOTHING
 }
-
-resetHelperArrays() {
-    # clean trash array
-    unset TRASH
-    let TRASH_INDEX=0
-
-    # clean news array
-    unset NEWS
-    let NEWS_INDEX=0
-}
-
 evaluateLife() {
     for cell in ${CELLS[*]}; do
 
@@ -222,44 +169,129 @@ evaluateLife() {
     done
 }
 
-init() {
-    # if init with seed
-    addCellsSeed $1
+# Methods to print cells and info game
+printLine() {
+    printf "\n%*s\n" $(tput cols) | tr ' ' - >> ${buffer}
+}
+printHeader() {
+    printf "El Juego de la Vida" >> ${buffer}
+    printLine
+}
+printFooter() {
+    tput cup $((GRID_START_ROW + GRID_HEIGHT)) 0 >> ${buffer}
+    printLine
+    printf "Generación: $GENERATION Población: ${#CELLS[*]}" >> ${buffer}
+    printf "\nPress 'n' to next generation" >> ${buffer}
+    printf "\nPress 'p' to play a generation per second" >> ${buffer}
+    printLine
+}
+printInitOptions() {
+    printf "Or press the number of the seed what you want:\n\n" >> ${buffer}
+    countSeed=0;
+    for file in seeds/*; do
+        filename=${file#*/}
+        let countSeed++
+        SEEDS[$countSeed]=${filename%.txt}
+        printf "$((countSeed)): ${SEEDS[$countSeed]}\n" >> ${buffer}
+    done
+}
+printBody() {
+
+    # add new cells
+    for new in ${NEWS[*]}; do
+        IFS='|' read -ra positionsNew <<< "$new"
+        newX=${positionsNew[0]}
+        newY=${positionsNew[1]}
+
+        addCell $newX $newY
+    done
+
+    # add cells
+    for cell in ${CELLS[*]}; do
+
+        if [[ $cell ]]; then
+
+            IFS='|' read -ra positionsCell <<< "$cell"
+            cellX=${positionsCell[0]}
+            cellY=${positionsCell[1]}
+
+            # print cell
+            tput cup $cellY $cellX >> ${buffer}
+            printf "x" >> ${buffer}
+        fi
+    done
+
+    # delete cells in trash
+    for junk in ${TRASH[*]}; do
+
+        IFS='|' read -ra positionsJunk <<< "$junk"
+        junkX=${positionsJunk[0]}
+        junkY=${positionsJunk[1]}
+
+        # print empty space
+        tput cup $junkY $junkX >> ${buffer}
+        printf " " >> ${buffer}
+
+        # remove cell
+        unset CELLS["$junk"]
+    done
+
+    # increase generation
+    let GENERATION++
+}
+printGeneration() {
+    clear >> ${buffer}
+    printHeader
+    printBody
+    printFooter
+}
+
+# Methods to play the game
+initGame() {
+    addSeed $1
 
     # init buffer
     buffer="buffer"
     printf "" > ${buffer}
 
-    clear >> ${buffer}
-    printHeader
-    printGrid
-    printFooter
-}
+    printGeneration
+    # printInitOptions
 
-increaseGeneration() {
+    cat "${buffer}"
+    printf "" > ${buffer}
+}
+iterateGame() {
     resetHelperArrays
     evaluateLife
-
-    clear >> ${buffer}
-    printHeader
-    printGrid
-    printFooter
+    printGeneration
+    cat "${buffer}"
+    printf "" > ${buffer}
 }
 
-init $1
-cat "${buffer}"
+# Init game
+initGame $1
 
 while :
 do
     # read -s: do not echo input coming from a terminal.
     # read -n: return after reading NCHARS characters rather than waiting
-    #          for a newline, but honor a delimiter if fewer than
-    #          NCHARS characters are read before the delimiter.
+    #          for a newline
     read -s -n 1 key
     case "$key" in
-        n) 
-            increaseGeneration
-            cat "${buffer}"
+        n) iterateGame;;
+        p)
+            while :
+            do
+                iterateGame
+                sleep 1
+            done
             ;;
+        1) SEED_SELECTED="${SEEDS[1]}"; initGame;;
+        2) SEED_SELECTED="${SEEDS[2]}"; initGame;;
+        3) SEED_SELECTED="${SEEDS[3]}"; initGame;;
+        4) SEED_SELECTED="${SEEDS[4]}"; initGame;;
+        5) SEED_SELECTED="${SEEDS[5]}"; initGame;;
+        6) SEED_SELECTED="${SEEDS[6]}"; initGame;;
+        7) SEED_SELECTED="${SEEDS[7]}"; initGame;;
     esac
 done
