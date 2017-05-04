@@ -25,7 +25,19 @@ declare -a NEWS
 declare -i NEWS_INDEX=0
 
 printLine() {
-    printf "%*s\n" $(tput cols) | tr ' ' -
+    printf "\n%*s\n" $(tput cols) | tr ' ' - >> ${buffer}
+}
+
+printHeader() {
+    printf "El Juego de la Vida" >> ${buffer}
+    printLine
+}
+
+printFooter() {
+    tput cup $((GRID_START_ROW + GRID_HEIGHT)) 0 >> ${buffer}
+    printLine
+    printf "Generación: $GENERATION Población: ${#CELLS[*]}" >> ${buffer}
+    printf "\nPress 'n' to next generation\n" >> ${buffer}
 }
 
 addCell() {
@@ -46,6 +58,11 @@ addCellsSeed() {
     declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
     declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
 
+    file="seed.txt"
+    if [[ "$1" ]]; then
+        file="$1"
+    fi
+
     # initials cells is in seed.txt
     # IFS: Internal Field Separator
     # read -r: do not allow backslashes to escape any characters
@@ -59,7 +76,7 @@ addCellsSeed() {
                 addCell $(( CENTERED_LEFT+i )) $CENTERED_TOP
             fi
         done
-    done < seed.txt
+    done < "$file"
 }
 
 printGrid() {
@@ -83,7 +100,8 @@ printGrid() {
             cellY=${positionsCell[1]}
 
             # print cell
-            tput cup $cellY $cellX; printf "X"
+            tput cup $cellY $cellX >> ${buffer}
+            printf "X" >> ${buffer}
         fi
     done
 
@@ -95,15 +113,12 @@ printGrid() {
         junkY=${positionsJunk[1]}
 
         # print empty space
-        tput cup $junkY $junkX; printf " "
+        tput cup $junkY $junkX >> ${buffer}
+        printf " " >> ${buffer}
 
         # remove cell
         unset CELLS["$junk"]
     done
-
-    # clean trash array
-    unset TRASH
-    let TRASH_INDEX=0
 
     # increase generation
     let GENERATION++
@@ -170,6 +185,16 @@ evaluateNeighbors() {
     # TO NOTHING
 }
 
+resetHelperArrays() {
+    # clean trash array
+    unset TRASH
+    let TRASH_INDEX=0
+
+    # clean news array
+    unset NEWS
+    let NEWS_INDEX=0
+}
+
 evaluateLife() {
     for cell in ${CELLS[*]}; do
 
@@ -195,29 +220,34 @@ evaluateLife() {
             evaluateNeighbors $x $y "comesFromNeighbor"
         fi
     done
-
-    printGrid
-
-    # FOOTER
-    tput cup $((GRID_START_ROW + GRID_HEIGHT + 1)) 0
-    printf "Generación: $GENERATION Población: ${#CELLS[*]}"
-    tput cup $((GRID_START_ROW + GRID_HEIGHT + 3)) 0
 }
 
-# HEADER
-clear
-printf "El Juego de la Vida\n"; printLine
+init() {
+    # if init with seed
+    addCellsSeed $1
 
-# BODY
-# sprint 0
-addCellsSeed
-printGrid
+    # init buffer
+    buffer="buffer"
+    printf "" > ${buffer}
 
-# FOOTER
-tput cup $((GRID_START_ROW + GRID_HEIGHT)) 0; printLine
-printf "\nGeneración: $GENERATION Población: ${#CELLS[*]}"
-tput cup $((GRID_START_ROW + GRID_HEIGHT + 1)) 0
-printf "\nPress 'n' to next generation \n"
+    clear >> ${buffer}
+    printHeader
+    printGrid
+    printFooter
+}
+
+increaseGeneration() {
+    resetHelperArrays
+    evaluateLife
+
+    clear >> ${buffer}
+    printHeader
+    printGrid
+    printFooter
+}
+
+init $1
+cat "${buffer}"
 
 while :
 do
@@ -228,7 +258,8 @@ do
     read -s -n 1 key
     case "$key" in
         n) 
-            evaluateLife
+            increaseGeneration
+            cat "${buffer}"
             ;;
     esac
 done
