@@ -19,37 +19,26 @@ declare -i GRID_START_ROW=2
 declare -i GRID_START_COL=0
 
 declare -i GRID_HEIGHT=25
-declare -i GRID_WIDTH=100
+declare -i GRID_WIDTH=$(tput cols)
 
 declare -A CELLS
 declare -A NEIGHBORS
 
-declare -a TRASH
-declare -i TRASH_INDEX=0
-
-declare -a NEWS
-declare -i NEWS_INDEX=0
+declare -A TEMP_CELLS
 
 SEED_SELECTED="oscillator"
 declare -a SEEDS
 
 # Methods for the game processing
-resetHelperArrays() {
-    # clean trash array
-    unset TRASH
-    let TRASH_INDEX=0
-
-    # clean news array
-    unset NEWS
-    let NEWS_INDEX=0
-}
 addCell() {
     # Parameters:
     # each cell contains "x|y|index" positions
     local x=$1
     local y=$2
 
-    CELLS["$x|$y"]="$x|$y"
+    if [[ ! ${CELLS["$x|$y"]} ]]; then
+        CELLS["$x|$y"]="$x|$y"
+    fi
 }
 addSeed() {
 
@@ -129,20 +118,19 @@ evaluateNeighbors() {
     # cell with fewer than two live neighbors dies
     # cell with more than three live neighbors dies
     if [[ "$comesFromNeighbor" == "" && ($count -lt 2 ||  $count -gt 3) ]]; then
-        TRASH[$TRASH_INDEX]="$x|$y"
-        let TRASH_INDEX++
+        TEMP_CELLS["$x|$y"]="$x|$y|0"
     fi
 
     # cell with exactly three live neighbors becomes a live
     if [[ "$comesFromNeighbor" == "comesFromNeighbor" && $count -eq 3 ]]; then
-        NEWS[$NEWS_INDEX]="$x|$y"
-        let NEWS_INDEX++
+        TEMP_CELLS["$x|$y"]="$x|$y|1"
     fi
 
     # cell with two or three live neighbors lives
     # TO NOTHING
 }
 evaluateLife() {
+    TEMP_CELLS=
     for cell in ${CELLS[*]}; do
 
         if [[ $cell ]]; then
@@ -171,7 +159,7 @@ evaluateLife() {
 
 # Methods to print cells and info game
 printLine() {
-    printf "\n%*s\n" $(tput cols) | tr ' ' - >> ${buffer}
+    printf "\n%*s\n" $GRID_WIDTH | tr ' ' - >> ${buffer}
 }
 printHeader() {
     printf "El Juego de la Vida" >> ${buffer}
@@ -183,27 +171,30 @@ printFooter() {
     printf "Generación: $GENERATION Población: ${#CELLS[*]}" >> ${buffer}
     printf "\nPress 'n' to next generation" >> ${buffer}
     printf "\nPress 'p' to play a generation per second" >> ${buffer}
+    printf "\nDefault grid size x:${GRID_WIDTH} y:${GRID_HEIGHT}" >> ${buffer}
     printLine
-}
-printInitOptions() {
-    printf "Or press the number of the seed what you want:\n\n" >> ${buffer}
-    countSeed=0;
-    for file in seeds/*; do
-        filename=${file#*/}
-        let countSeed++
-        SEEDS[$countSeed]=${filename%.txt}
-        printf "$((countSeed)): ${SEEDS[$countSeed]}\n" >> ${buffer}
-    done
 }
 printBody() {
 
-    # add new cells
-    for new in ${NEWS[*]}; do
-        IFS='|' read -ra positionsNew <<< "$new"
-        newX=${positionsNew[0]}
-        newY=${positionsNew[1]}
+    for tempCell in ${TEMP_CELLS[*]}; do
 
-        addCell $newX $newY
+        IFS='|' read -ra positionsTempCell <<< "$tempCell"
+        declare -i tempCellX=${positionsTempCell[0]}
+        declare -i tempCellY=${positionsTempCell[1]}
+        declare -i tempCellLife=${positionsTempCell[2]}
+
+
+        if [[ $tempCellLife -ge 0 ]]; then
+            
+            if [[ $tempCellLife -eq 1 ]]; then
+                addCell $tempCellX $tempCellY
+            else
+                tput cup $tempCellX $tempCellY >> ${buffer}
+                # print empty space
+                printf " " >> ${buffer}
+                unset CELLS["$tempCellX|$tempCellY"]
+            fi
+        fi
     done
 
     # add cells
@@ -221,26 +212,10 @@ printBody() {
         fi
     done
 
-    # delete cells in trash
-    for junk in ${TRASH[*]}; do
-
-        IFS='|' read -ra positionsJunk <<< "$junk"
-        junkX=${positionsJunk[0]}
-        junkY=${positionsJunk[1]}
-
-        # print empty space
-        tput cup $junkY $junkX >> ${buffer}
-        printf " " >> ${buffer}
-
-        # remove cell
-        unset CELLS["$junk"]
-    done
-
     # increase generation
     let GENERATION++
 }
 printGeneration() {
-    clear >> ${buffer}
     printHeader
     printBody
     printFooter
@@ -248,21 +223,23 @@ printGeneration() {
 
 # Methods to play the game
 initGame() {
+    # init buffer
+    buffer="/tmp/buffer-${RANDOM}"
+    printf "" > ${buffer}
+    
+    CELLS=
     addSeed $1
 
-    # init buffer
-    buffer="buffer"
-    printf "" > ${buffer}
-
+    clear >> ${buffer}
     printGeneration
-    # printInitOptions
 
     cat "${buffer}"
     printf "" > ${buffer}
 }
 iterateGame() {
-    resetHelperArrays
     evaluateLife
+
+    clear >> ${buffer}
     printGeneration
     cat "${buffer}"
     printf "" > ${buffer}
@@ -283,15 +260,8 @@ do
             while :
             do
                 iterateGame
-                sleep 1
+                sleep 0.1
             done
             ;;
-        1) SEED_SELECTED="${SEEDS[1]}"; initGame;;
-        2) SEED_SELECTED="${SEEDS[2]}"; initGame;;
-        3) SEED_SELECTED="${SEEDS[3]}"; initGame;;
-        4) SEED_SELECTED="${SEEDS[4]}"; initGame;;
-        5) SEED_SELECTED="${SEEDS[5]}"; initGame;;
-        6) SEED_SELECTED="${SEEDS[6]}"; initGame;;
-        7) SEED_SELECTED="${SEEDS[7]}"; initGame;;
     esac
 done
