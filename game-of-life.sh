@@ -26,9 +26,6 @@ declare -A NEIGHBORS
 
 declare -A TEMP_CELLS
 
-SEED_SELECTED="oscillator"
-declare -a SEEDS
-
 # Methods for the game processing
 addCell() {
     # Parameters:
@@ -40,36 +37,35 @@ addCell() {
         CELLS["$x|$y"]="$x|$y"
     fi
 }
-addSeed() {
+readSeed() {
+    # Read lines from the standard input into the indexed array variable array
+    readarray SEED
 
-    file="seeds/$SEED_SELECTED.txt"
-    if [[ "$1" ]]; then
-        file="$1"
-    fi
+    if [[ ${#SEED[*]} -gt 0 ]]; then
+        # Num of lines, cols in $file
+        declare -i lines=$(awk 'END { print NR }' $file)
+        declare -i cols=$(awk '{ if (length > L) {L=length} } END { print L }' $file)
 
-    # Num of lines, cols in $file
-    declare -i lines=$(awk 'END { print NR }' $file)
-    declare -i cols=$(awk '{ if (length > L) {L=length} } END { print L }' $file)
-
-    # center cells
-    declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
-    declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
+        # center cells
+        declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
+        declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
 
 
-    # initials cells
-    # IFS: Internal Field Separator
-    # read -r: do not allow backslashes to escape any characters
-    while IFS= read -r line; do
+        # initials cells
+        # IFS: Internal Field Separator
+        IFS=
+        for line in ${SEED[*]}; do
 
-        let CENTERED_TOP++
+            let CENTERED_TOP++
 
-        for(( i=0; i<=${#line}; i++ )); do
+            for(( i=0; i<=${#line}; i++ )); do
 
-            if [[ "${line:$i:1}" == "x" ]]; then
-                addCell $(( CENTERED_LEFT+i )) $CENTERED_TOP
-            fi
+                if [[ "${line:$i:1}" == "x" ]]; then
+                    addCell $(( CENTERED_LEFT+i )) $CENTERED_TOP
+                fi
+            done
         done
-    done < "$file"
+    fi
 }
 evaluateNeighbors() {
     # Parameters:
@@ -171,7 +167,6 @@ printFooter() {
     printf "Generación: $GENERATION Población: ${#CELLS[*]}" >> ${buffer}
     printf "\nPress 'n' to next generation" >> ${buffer}
     printf "\nPress 'p' to play a generation per second" >> ${buffer}
-    printf "\nDefault grid size x:${GRID_WIDTH} y:${GRID_HEIGHT}" >> ${buffer}
     printLine
 }
 printBody() {
@@ -228,13 +223,15 @@ initGame() {
     printf "" > ${buffer}
     
     CELLS=
-    addSeed $1
+    readSeed $1
 
     clear >> ${buffer}
     printGeneration
 
     cat "${buffer}"
     printf "" > ${buffer}
+
+    initControls
 }
 iterateGame() {
     evaluateLife
@@ -244,24 +241,25 @@ iterateGame() {
     cat "${buffer}"
     printf "" > ${buffer}
 }
+initControls() {
+    while :
+    do
+        # read -s: do not echo input coming from a terminal.
+        # read -n: return after reading NCHARS characters rather than waiting
+        #          for a newline
+        read -s -n 1 key
+        case "$key" in
+            n) iterateGame;;
+            p)
+                while :
+                do
+                    iterateGame
+                    sleep 0.1
+                done
+                ;;
+        esac
+    done
+}
 
 # Init game
 initGame $1
-
-while :
-do
-    # read -s: do not echo input coming from a terminal.
-    # read -n: return after reading NCHARS characters rather than waiting
-    #          for a newline
-    read -s -n 1 key
-    case "$key" in
-        n) iterateGame;;
-        p)
-            while :
-            do
-                iterateGame
-                sleep 0.1
-            done
-            ;;
-    esac
-done
