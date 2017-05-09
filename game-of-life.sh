@@ -37,35 +37,28 @@ addCell() {
         CELLS["$x|$y"]="$x|$y"
     fi
 }
-readSeed() {
-    # Read lines from the standard input into the indexed array variable array
-    readarray SEED
+saveSeed() {
+    # Num of lines, cols in $file
+    declare -i lines=$(echo "$SEED" | awk 'END { print NR }')
+    declare -i cols=$(echo "$SEED" | awk '{ if (length > L) {L=length} } END { print L }')
 
-    if [[ ${#SEED[*]} -gt 0 ]]; then
-        # Num of lines, cols in $file
-        declare -i lines=$(awk 'END { print NR }' $file)
-        declare -i cols=$(awk '{ if (length > L) {L=length} } END { print L }' $file)
+    # center cells
+    declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
+    declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
 
-        # center cells
-        declare -i CENTERED_LEFT=$(( (GRID_WIDTH - cols) / 2 ))
-        declare -i CENTERED_TOP=$(( (GRID_HEIGHT - lines) / 2 ))
+    # initials cells
+    # IFS: Internal Field Separator
+    while IFS=: read line; do
 
+        let CENTERED_TOP++
 
-        # initials cells
-        # IFS: Internal Field Separator
-        IFS=
-        for line in ${SEED[*]}; do
+        for(( i=0; i<=${#line}; i++ )); do
 
-            let CENTERED_TOP++
-
-            for(( i=0; i<=${#line}; i++ )); do
-
-                if [[ "${line:$i:1}" == "x" ]]; then
-                    addCell $(( CENTERED_LEFT+i )) $CENTERED_TOP
-                fi
-            done
+            if [[ "${line:$i:1}" == "x" ]]; then
+                addCell $(( CENTERED_LEFT+i )) $CENTERED_TOP
+            fi
         done
-    fi
+    done <<< "$SEED"
 }
 evaluateNeighbors() {
     # Parameters:
@@ -164,7 +157,7 @@ printHeader() {
 printFooter() {
     tput cup $((GRID_START_ROW + GRID_HEIGHT)) 0 >> ${buffer}
     printLine
-    printf "Generación: $GENERATION Población: ${#CELLS[*]}" >> ${buffer}
+    printf "Generacion: $GENERATION Poblacion: ${#CELLS[*]}" >> ${buffer}
     printf "\nPress 'n' to next generation" >> ${buffer}
     printf "\nPress 'p' to play a generation per second" >> ${buffer}
     printLine
@@ -217,21 +210,19 @@ printGeneration() {
 }
 
 # Methods to play the game
-initGame() {
+startGame() {
     # init buffer
     buffer="/tmp/buffer-${RANDOM}"
     printf "" > ${buffer}
     
     CELLS=
-    readSeed $1
+    saveSeed
 
     clear >> ${buffer}
     printGeneration
 
     cat "${buffer}"
     printf "" > ${buffer}
-
-    initControls
 }
 iterateGame() {
     evaluateLife
@@ -241,25 +232,31 @@ iterateGame() {
     cat "${buffer}"
     printf "" > ${buffer}
 }
-initControls() {
-    while :
-    do
-        # read -s: do not echo input coming from a terminal.
-        # read -n: return after reading NCHARS characters rather than waiting
-        #          for a newline
-        read -s -n 1 key
-        case "$key" in
-            n) iterateGame;;
-            p)
-                while :
-                do
-                    iterateGame
-                    sleep 0.1
-                done
-                ;;
-        esac
-    done
-}
 
+# -------------------------------
 # Init game
-initGame $1
+# -------------------------------
+# Read seed content from cat output
+SEED=$(awk '{print}')
+
+# Start first state of game
+startGame
+
+# Read keypress event
+while :
+do
+    # read -s: do not echo input coming from a terminal.
+    # read -n: return after reading NCHARS characters rather than waiting
+    #          for a newline
+    read -s -n 1 key
+    case "$key" in
+        n) iterateGame;;
+        p)
+            while :
+            do
+                iterateGame
+                sleep 0.1
+            done
+            ;;
+    esac
+done
