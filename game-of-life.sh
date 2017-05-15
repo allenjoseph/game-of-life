@@ -237,7 +237,11 @@ iterateGame() {
 # Init game
 # -------------------------------
 # Read seed content from cat output
-SEED=$(awk '{print}')
+# SEED=$(awk '{print}')
+SEED=
+if [[ ! $SEED ]]; then
+    SEED=$(cat seeds/oscillator.txt)
+fi
 
 # Start first state of game
 startGame
